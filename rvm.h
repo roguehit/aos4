@@ -6,10 +6,11 @@
 #define MAX_SEGMENT 100
 
 typedef struct __memSeg{
- char *name;
+ char name[200];
  void *address;
  int fd;
  int size;
+ char path[200];
 } memSeg;
 
 struct __rvm_t{
@@ -22,6 +23,6 @@ struct __rvm_t{
 typedef struct __rvm_t* rvm_t; 
 extern rvm_t rvm_init(const char *directory);
 extern void *rvm_map(rvm_t rvm, const char *segname, int size_to_create);
-
-
+extern void rvm_unmap(rvm_t rvm, void *segbase);
+extern void rvm_destroy(rvm_t rvm, const char *segname);
 #endif
