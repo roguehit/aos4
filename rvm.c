@@ -39,8 +39,7 @@ rvm_t rvm_init(const char *directory){
 			fprintf(stderr,"Directory Already Exits\n");
 		}
 		else
-			fprintf(stderr,"Creation of Directory \
-			failed : %d\n",errno);
+			fprintf(stderr,"Creation of Directory failed : %s\n",strerror(errno));
 		/*Handle Error from MKDIR*/
 	}
 
@@ -57,9 +56,9 @@ rvm_t rvm_init(const char *directory){
 int lockfile(int fd)
 {
 	/*
-	*Flock is blocking & Signals can screw up
-	*hence block all signals.	
-	*/
+	 *Flock is blocking & Signals can screw up
+	 *hence block all signals.	
+	 */
 	block_signal();
 	int retval = flock(fd,LOCK_EX);
 	unblock_signal();
@@ -76,16 +75,16 @@ int filesize(int fd)
 	struct stat info;
 
 	if( fstat(fd,&info) == -1){
-	fprintf(stderr,"File Suddenly Disappeared\n");
-	//exit(EXIT_FAILURE);
-	return -1;
+		fprintf(stderr,"File Suddenly Disappeared\n");
+		//exit(EXIT_FAILURE);
+		return -1;
 	}
-//	printf("Hardlinks to file : %d\n",info.st_nlink);
+	//	printf("Hardlinks to file : %d\n",info.st_nlink);
 
 	/*
-	*Making Sure the file is not special
-	*and does not have more than 1 hardlink
-	*/
+	 *Making Sure the file is not special
+	 *and does not have more than 1 hardlink
+	 */
 	assert(info.st_nlink == 1);
 
 	return info.st_size;
@@ -94,20 +93,23 @@ int filesize(int fd)
 static void fill_region(int fd,int size)
 {
 	int i;
-	
+
 	for(i = 0; i < size;i++)
-	if( write(fd,(void*)"t",1) == -1){
-	fprintf(stderr,"Error : %s",strerror(errno));
-	exit(EXIT_FAILURE);		
-	}
-return;
+		if( write(fd,(void*)"t",1) == -1){
+			fprintf(stderr,"Error : %s",strerror(errno));
+			exit(EXIT_FAILURE);		
+		}
+	return;
 }
 int check_exist(rvm_t rvm, char* segname)
 {
 	if(rvm->segNo == 0)
-	return FALSE;
-	else if( index_from_name(rvm,segname) == -1) 
-	return FALSE;
+		return FALSE;
+
+	//printf("Checking if %s exists\n",segname);
+
+	if(index_from_name(rvm,segname) == -1) 
+		return FALSE;
 
 	return TRUE;
 
@@ -119,8 +121,9 @@ void *rvm_map(rvm_t rvm, const char *segname, int size_to_create){
 	memSeg *seg;
 	char filepath[500];
 	sprintf(dirfile,"%s/test.dir",rvm->dir);
+	int temp;
 	int dirfp = open (dirfile,O_RDWR | O_CREAT , S_IRWXU | S_IRWXG);
-
+#if 1
 	if(dirfp == -1){
 		fprintf(stderr,"Could not create dummy directory file to lock\n");
 	}
@@ -129,46 +132,64 @@ void *rvm_map(rvm_t rvm, const char *segname, int size_to_create){
 		fprintf(stderr,"Lock Failed\n");
 		exit(EXIT_FAILURE);
 	}
-
-        seg = (memSeg*) malloc(sizeof(memSeg));
-//	printf("Here\n");
+#endif
+	seg = (memSeg*) malloc(sizeof(memSeg));
+	//	printf("Here\n");
 	strcpy(seg->name,segname);
 
 	sprintf(filepath,"%s/%s",rvm->dir,segname);
 	strcpy(seg->path,filepath);
 	/*Open a segment*/
-	seg->fd = open(filepath,O_RDWR | O_CREAT | O_EXCL,S_IRWXU | S_IRWXG);
+	seg->fd = open(filepath,O_RDWR | O_CREAT | O_EXCL,(mode_t)0600);
 	/*BrandNew Segment File*/
-	if( seg->fd >= 0 ){
-//	printf("Here\n");
+	if( seg->fd != -1 ){
+		//	printf("Here\n");
 		seg->size = size_to_create;
 		//write(seg->fd,(void*)"testing",1);	
-	
-		seg->address = mmap(NULL,size_to_create,
+		//printf("FD:%d\n",seg->fd);		
+		//temp = lseek(seg->fd,seg->size-1,SEEK_SET);
+
+		//fill_region(seg->fd,size_to_create);
+		temp = lseek(seg->fd,seg->size-1,SEEK_SET);
+		if(temp == -1){
+			fprintf(stderr,"Seek Failed : %s\n",strerror(errno));
+			close(seg->fd);
+			exit(EXIT_FAILURE);
+		}
+
+		temp = write(seg->fd,"",1);
+		if(temp == -1){
+			fprintf(stderr,"Write Failed : %s\n",strerror(errno));
+			close(seg->fd);
+			exit(EXIT_FAILURE);
+		}
+
+		//printf("FD:%d\n",seg->fd);
+
+		seg->address = mmap(0,size_to_create,
 				PROT_READ | PROT_WRITE,
 				MAP_PRIVATE,
 				seg->fd,0);
 
-		
 
-	//	printf("Here\n");
-		if(seg->address == (void*)-1){
+		//	printf("Here\n");
+		if(seg->address == MAP_FAILED ){
 			fprintf(stderr,"mmap failed:%s on %d\n",strerror(errno),__LINE__);
 			unlockfile(dirfp);
 			close(dirfp);
+			close(seg->fd);
 			return (rvm_t)-1;
 		}else{
-		//printf("%d",(size_t)size_to_create);
-		//memset(seg->address,1,(size_t)size_to_create);
-		fill_region(seg->fd,size_to_create);
-		seg->fd = lseek(seg->fd,SEEK_SET,0);
+			//printf("%d",(size_t)size_to_create);
+			printf("New Segment %s at %08x, filepath %s FD %d\n",seg->name,(int)(int*)seg->address,filepath,seg->fd);
+			//memset(seg->address,1,(size_t)size_to_create);
 		}
 		//seg->fd = lseek(seg->fd,SEEK_SET,0);
 	}else { 
 		/*Backup Segment is already present*/
 		if(check_exist(rvm,seg->name) == TRUE ){
-		fprintf(stderr,"Segment has been mapped already\n");
-		return (rvm_t)-1;
+			fprintf(stderr,"Segment has been mapped already\n");
+			return (rvm_t)-1;
 		}
 
 		seg->fd = open(filepath,O_RDWR);
@@ -196,6 +217,7 @@ void *rvm_map(rvm_t rvm, const char *segname, int size_to_create){
 				close(dirfp);
 				return (rvm_t)-1;
 			}
+			printf("Opening Old Segment %s at %d address\n",seg->name,*((int*)seg->address));
 		}else if(size < size_to_create){
 			seg->address = mmap(NULL,size,
 					PROT_READ | PROT_WRITE,
@@ -237,30 +259,42 @@ static int index_from_address(rvm_t rvm, void* segbase)
 {
 	int i;
 	int *address = (int*) segbase;
-        //printf("Add from RVM %d\n",*((int*)rvm->segment[0]->address));	
+	//printf("Add from RVM %d\n",*((int*)rvm->segment[0]->address));	
 	for(i = 0; i < MAX_SEGMENT; i++){	
-	if( *((int*)rvm->segment[i]->address) == *((int*)address) )
-	break;
+
+		//if(rvm->segment[i]->address == NULL)
+		//continue; 
+
+		if( (int*)rvm->segment[i]->address == address ){
+			printf("Returning now %d : %s\n",i,rvm->segment[i]->name);
+			return i;
+		}
 	}
 	//printf("Index is %d\n",i);
-	return  (i == (MAX_SEGMENT-1) )? -1 : i; 
-	
+	return -1; 
+
 }
 
 void rvm_unmap(rvm_t rvm, void *segbase)
+
 {
 	int index;
-	//printf("Address is %d\n",*((int*)segbase));
+	//printf("Address %d is of %s\n",((int*)segbase),rvm->segment[index_from_address(rvm,segbase)]->name );
 	if( (index = index_from_address(rvm,segbase)) == -1 ){
-	fprintf(stderr,"Could not resolve index for the segment\n");
-	exit(EXIT_FAILURE);
+		fprintf(stderr,"Could not resolve index for the segment\n");
+		exit(EXIT_FAILURE);
 	}
 
-	//printf("Index : %d\n",index);
+	printf("Unmapping Segment %s at Index : %d\n",rvm->segment[index]->name,index);
 	if(munmap(segbase,rvm->segment[index]->size)){
-	fprintf(stderr,"Could not unmap the segment : %s\n",strerror(errno));
-	exit(EXIT_FAILURE);
+		fprintf(stderr,"Could not unmap the segment : %s\n",strerror(errno));
+		exit(EXIT_FAILURE);
 	}
+
+	/*Clean up the Structure Fields*/
+	rvm->segment[index]->address = NULL;
+	rvm->segment[index]->fd = -1;
+
 	return;
 }
 
@@ -268,20 +302,25 @@ int index_from_name(rvm_t rvm, const char* segment)
 {
 	int i;
 	//printf("before\n");	
-	for(i = 0; i < MAX_SEGMENT; i++){
-	if(!strcmp(rvm->segment[i]->name,segment))
-	break;
+	for(i = 0; i < rvm->segNo ;i++){
+
+		//if(rvm->segment[i]->address == NULL)
+		//continue;
+
+		if(!strcmp(rvm->segment[i]->name,segment))
+			return i;
+
 	}
 	//printf("Index %d\n",i);	
-	return  (i == (MAX_SEGMENT-1) )? -1 : i; 
+	return -1; 
 }
 void rvm_destroy(rvm_t rvm, const char* segment)
 {
 	int index = index_from_name(rvm,segment);
 	//printf("Found the index : %d\n",index);
 	if(remove(rvm->segment[index]->path)){
-	fprintf(stderr,"Couldn't remove %s : %s\n",segment,strerror(errno));
-	exit(EXIT_FAILURE);
+		fprintf(stderr,"Couldn't remove %s : %s\n",segment,strerror(errno));
+		exit(EXIT_FAILURE);
 	}
 }
 #if 0
@@ -289,37 +328,38 @@ void rvm_commit_trans(void* segment, int fd ,int size)
 {
 	//printf("Copying to backing store\n");
 	if(write(fd,segment,size) == -1){
-	fprintf(stderr,"Commit Failed:%s\n",strerror(errno));
-	exit(EXIT_FAILURE);
+		fprintf(stderr,"Commit Failed:%s\n",strerror(errno));
+		exit(EXIT_FAILURE);
 	}
-return;	
+	return;	
 }
 #endif
 
 static void block_signal()
 {
-        sigset_t set;
+	sigset_t set;
 
-        /*XXX Allow SIGINT & SIGTERM*/
+	/*XXX Allow SIGINT & SIGTERM*/
 	/* Block the signal */
-        sigfillset(&set);
+	sigfillset(&set);
 	sigdelset(&set,SIGINT);
-        sigprocmask(SIG_BLOCK, &set, NULL);
+	sigprocmask(SIG_BLOCK, &set, NULL);
 
-        return;
+	return;
 }
 
 static void unblock_signal()
 {
-        sigset_t set;
+	sigset_t set;
 
-        /* Unblock the signal */
-        sigfillset(&set);
-        //sigaddset(&set, signo);
-        sigprocmask(SIG_UNBLOCK, &set, NULL);
+	/* Unblock the signal */
+	sigfillset(&set);
+	//sigaddset(&set, signo);
+	sigprocmask(SIG_UNBLOCK, &set, NULL);
 
-        return;
+	return;
 }
+
 trans_t rvm_begin_trans(rvm_t rvm, int numsegs, void **segbases)
 {
 	int i,j; 
@@ -329,14 +369,21 @@ trans_t rvm_begin_trans(rvm_t rvm, int numsegs, void **segbases)
 	tid->rvm = rvm;
 	tid->numsegs = numsegs;
 	tid->last_index = 0;
+	printf("Running through %d Segments\n",rvm->segNo);
 	for(i = 0; i < rvm->segNo; i++)
-	{	
+	{
+		/*For Segments which have been unmapped*/
+		if(rvm->segment[i]->address == NULL){	
+		printf("Address of segment at index %d is NULL\n",i);
+		continue;
+		}
 		for(j = 0; j<numsegs; j++)
 		{
 			//fprintf(stderr, "Rvm Address:%d",*((int *)(rvm->segment[i]->address)));
 			void *seg = segbases[j];
-			fprintf(stderr, "Rvm Address:%d SegAddress: %d\n",*((int *)(rvm->segment[i]->address)), *((int*)(seg)));
-			if( *((int*)rvm->segment[i]->address) ==  *((int*)(seg)))
+
+			//fprintf(stderr, "Rvm Segment %d Address:%08x SegAddress:%08x\n",i,(int)(int *)(rvm->segment[i]->address),(int)(int*)(seg));
+			if( (int)((int*)rvm->segment[i]->address) ==  (int)((int*)(seg)))
 			{
 				if(rvm->segment[i]->locked == 1)
 				{
@@ -350,7 +397,7 @@ trans_t rvm_begin_trans(rvm_t rvm, int numsegs, void **segbases)
 					tid->last_index++;
 				}
 			}
-			
+
 		}
 	} 
 	return tid;
@@ -359,25 +406,25 @@ void rvm_about_to_modify(trans_t tid, void *segbase, int offset, int size)
 {
 	/* Get the current segments index in the rvm*/
 	int segIndex = index_from_address(tid->rvm, segbase);
-	
+
 	/*get the current time*/
 	struct timeval time1;
 	long int epoch;
 	gettimeofday(&time1,NULL);
 	epoch = time1.tv_sec * 1000 + time1.tv_usec/1000;
-	printf("%ld\n",epoch);	
+	//printf("%ld\n",epoch);	
 	/* Lock the log file and write tinto it */
 	flock(fileno(tid->rvm->log), LOCK_EX);
-  	if (fprintf(tid->rvm->log, "%ld|update|%s|%d|%d|", epoch,tid->rvm->segment[segIndex]->name,offset, size) < 0){
-	    perror("fprintf error");
-	    abort();
-  	}
+	if (fprintf(tid->rvm->log, "%ld|update|%s|%d|%d|", epoch,tid->rvm->segment[segIndex]->name,offset, size) < 0){
+		perror("fprintf error");
+		abort();
+	}
 	//fprintf(stderr,"here");
-  	fwrite((char *)segbase + offset , 1, size, tid->rvm->log);
-  	fprintf(tid->rvm->log, "|EOL|\n");
-  //write to disk
-  	fdatasync(fileno(tid->rvm->log));
-  	flock(fileno(tid->rvm->log), LOCK_UN);
+	fwrite((char *)segbase + offset , 1, size, tid->rvm->log);
+	fprintf(tid->rvm->log, "|EOL|\n");
+	//write to disk
+	fdatasync(fileno(tid->rvm->log));
+	flock(fileno(tid->rvm->log), LOCK_UN);
 
-  return;
+	return;
 }
