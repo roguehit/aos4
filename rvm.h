@@ -27,6 +27,7 @@ struct __transSeg{
 int mainIndex;
 int offset;
 int size;
+int global_trans_index;
 };
 
 struct __trans_t{
@@ -36,11 +37,23 @@ struct __trans_t{
 	struct __transSeg* transSeg[MAX_SEGMENT];
 	//memSeg* segment[MAX_SEGMENT];
 	int last_index;
+	
+	/*State of Transaction
+	* pending = 0
+	* done = 1
+	*/
+	int state;
 };
 
 /* TO be done - Tree Node Structure and Tree */
 
 typedef struct __trans_t* trans_t;
+
+typedef struct __GlobalTrans{
+	int globalCount;
+	trans_t tid[MAX_SEGMENT];
+}GlobalTrans;
+
 /* RVM functions */
 extern rvm_t rvm_init(const char *directory);
 extern void *rvm_map(rvm_t rvm, const char *segname, int size_to_create);
@@ -52,5 +65,5 @@ extern trans_t rvm_begin_trans(rvm_t rvm, int numsegs, void **segbases);
 extern void rvm_about_to_modify(trans_t tid, void *segbase, int offset, int size);
 extern void rvm_commit_trans(trans_t tid);
 extern void rvm_abort_trans(trans_t tid);
-extern int rvm_query_uncomm(rvm_t rvm, const char* segname, trans_t **tids);
+extern int rvm_query_uncomm(rvm_t rvm, trans_t *tids);
 #endif

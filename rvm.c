@@ -23,11 +23,19 @@ static void unblock_signal();
 static void fill_region(int fd , int size);
 static int index_from_address(rvm_t rvm, void* segbase);
 static int index_from_name (rvm_t rvm, const char* name);
+static int trans_index = 0;
 
+/*Structure to keep track of all transactions*/
+GlobalTrans* globalTrans;
+ 
 rvm_t rvm_init(const char *directory){
 
 	rvm_t RVM = (struct __rvm_t *) malloc (sizeof (struct __rvm_t));
 	RVM->segNo = 0;
+	
+	globalTrans = (GlobalTrans*) malloc (sizeof(GlobalTrans));
+	
+	globalTrans->globalCount = 0;		
 	/*Storing the Backup Directory path*/
 	sprintf(RVM->dir,"%s/%s",getenv("PWD"),directory);
 	//printf("Dir:%s\n",RVM->dir);
@@ -178,6 +186,10 @@ void update_backing_store(rvm_t rvm,const char *segname,int type)
 			//	printf("Now backing up segment %s\n",segname);
 
 			/*Extract TimeStamp*/
+			string = strtok(NULL,"|");
+			char transeg[200];
+			strcpy(transeg,string);	
+
 			string = strtok(NULL,"|");
 			unsigned int timestamp = atoi(string);
 
@@ -497,7 +509,7 @@ void rvm_commit_trans(trans_t tid)
 	
 	int segIndex = tid->transSeg[i]->mainIndex;
 	
-	if (fprintf(tid->rvm->log, "%s|%ld|commit|%d|%d|",tid->rvm->segment[segIndex]->name,epoch,tid->transSeg[i]->offset,tid->transSeg[i]->size) < 0){
+	if (fprintf(tid->rvm->log, "%s|transeg%d|%lu|commit|%d|%d|",tid->rvm->segment[segIndex]->name,tid->transSeg[i]->global_trans_index,epoch,tid->transSeg[i]->offset,tid->transSeg[i]->size) < 0){
 		fprintf(stderr,"fprintf error");
 		//flock(fileno(tid->rvm->log), LOCK_UN);
 		abort();
@@ -527,6 +539,8 @@ void rvm_commit_trans(trans_t tid)
 	update_backing_store(tid->rvm,tid->rvm->segment[i]->name,1);
 	}
 	
+	/*Change State of Transaction to Done*/
+	tid->state = 1;	
 	return;	
 }
 #endif
@@ -562,13 +576,14 @@ trans_t rvm_begin_trans(rvm_t rvm, int numsegs, void **segbases)
 
 	
 	trans_t tid = (struct __trans_t *) malloc (sizeof (struct __trans_t));		
-        
-	
 	tid->rvm = rvm;
 	tid->numsegs = numsegs;
 	tid->last_index = 0;
+	tid->state = 0; 
 
-		
+
+	globalTrans->tid[globalTrans->globalCount] = tid;
+	globalTrans->globalCount++;		
 
 	printf("Running through %d Segments\n",rvm->segNo);
 	for(i = 0; i < rvm->segNo; i++)
@@ -613,9 +628,11 @@ void rvm_about_to_modify(trans_t tid, void *segbase, int offset, int size)
 	transSeg->offset = offset;
 	transSeg->size = size;
 	transSeg->mainIndex = segIndex;
-
+	transSeg->global_trans_index = trans_index;
+	trans_index++;
+	
 	tid->transSeg[tid->last_index++] = transSeg;
-
+	
 	char filename[500];
         sprintf(filename,"%s/test.log",tid->rvm->dir);
 
@@ -632,7 +649,8 @@ void rvm_about_to_modify(trans_t tid, void *segbase, int offset, int size)
 	//printf("%ld\n",epoch);	
 	/* Lock the log file and write tinto it */
 	//flock(fileno(tid->rvm->log), LOCK_EX);
-	if (fprintf(tid->rvm->log, "%s|%ld|update|%d|%d|",tid->rvm->segment[segIndex]->name,epoch,offset, size) < 0){
+	
+	if (fprintf(tid->rvm->log, "%s|transseg%d|%lu|update|%d|%d|",tid->rvm->segment[segIndex]->name,transSeg->global_trans_index,epoch,offset, size) < 0){
 		printf("haga\n");
 		perror("fprintf error");
 		flock(fileno(tid->rvm->log), LOCK_UN);
@@ -647,3 +665,22 @@ void rvm_about_to_modify(trans_t tid, void *segbase, int offset, int size)
         fclose(tid->rvm->log);	
 	return;
 }
+
+int rvm_query_uncomm(rvm_t rvm, trans_t *tids)
+{
+	int i;
+	int ret = 0;
+
+	for(i = 0 ; i < globalTrans->globalCount ; i++ )
+	if(globalTrans->tid[i]->state == 0)
+	ret++;
+
+	if(ret!=0){
+	tids = (struct __trans_t **) malloc (sizeof(struct __trans_t*) * ret);
+	for(i = 0 ; i < ret ; i++)	
+	tids[i] = (struct __trans_t*) malloc(sizeof(struct __trans_t));
+	}
+
+return ret;
+}
+
