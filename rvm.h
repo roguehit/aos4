@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#define MAX_SEGMENT 100
+#define MAX_SEGMENT 10
 
 typedef struct __memSeg{
  char name[200];
@@ -21,10 +21,20 @@ struct __rvm_t{
  memSeg* segment[MAX_SEGMENT];
 };
 typedef struct __rvm_t* rvm_t; 
+
+struct __transSeg{
+//memSeg* segment;
+int mainIndex;
+int offset;
+int size;
+};
+
 struct __trans_t{
 	rvm_t rvm;
 	int numsegs;
-	memSeg* segment[MAX_SEGMENT];
+	//int segArr[MAX_SEGMENT];
+	struct __transSeg* transSeg[MAX_SEGMENT];
+	//memSeg* segment[MAX_SEGMENT];
 	int last_index;
 };
 
