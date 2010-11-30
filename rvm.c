@@ -53,6 +53,7 @@ rvm_t rvm_init(const char *directory){
 	/*Creating Backup Directory*/
 	if(mkdir(RVM->dir,S_IRUSR | S_IWUSR | S_IXUSR)){
 		if(errno == EEXIST){
+			if(debugEnableFlag)
 			fprintf(stderr,"Directory Already Exits\n");
 		}
 		else
