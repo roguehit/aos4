@@ -16,7 +16,7 @@
 
 
 int main(int argc, char **argv)
-{
+{rvm_verbose(0);
      rvm_t rvm;
      char* segs[2];
      trans_t trans;

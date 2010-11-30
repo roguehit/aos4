@@ -72,7 +72,7 @@ void proc2()
 int main(int argc, char **argv) 
 {
      int pid;
-
+rvm_verbose(0);
      pid = fork();
      if(pid < 0) {
 	  perror("fork");

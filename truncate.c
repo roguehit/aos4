@@ -9,7 +9,7 @@
 int main(int argc, char **argv) 
 {
      rvm_t rvm;
-
+rvm_verbose(0);
      printf("Before Truncation:\n");
      system("ls -l rvm_segments");
      
